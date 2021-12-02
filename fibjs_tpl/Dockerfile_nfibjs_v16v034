@@ -1,0 +1,38 @@
+FROM debian:buster-slim
+
+RUN groupadd --gid 1000 node \
+  && useradd --uid 1000 --gid node --shell /bin/bash --create-home node
+
+ENV NODE_VERSION 16.13.1
+ENV FIBJS_VERSION 0.34.0
+
+RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+    && case "${dpkgArch##*-}" in \
+      amd64) ARCH='x64';; \
+      arm64) ARCH='arm64';; \
+      i386) ARCH='x86';; \
+      *) echo "unsupported architecture"; exit 1 ;; \
+    esac \
+    && apt-get update && apt-get install -y ca-certificates wget --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$ARCH.tar.gz" -q --no-check-certificate -O node.tar.gz \
+    && wget "https://fibjs.org/dist/v$FIBJS_VERSION/fibjs-v$FIBJS_VERSION-linux-$ARCH.tar.gz" -q --no-check-certificate -O fibjs.tar.gz \
+    && tar zxvf node.tar.gz -C /usr/local/ --strip-components=1 --no-same-owner \
+    && tar zxvf fibjs.tar.gz -C /usr/local/bin/ \
+    && rm node.tar.gz fibjs.tar.gz \
+    && apt-mark auto '.*' > /dev/null \
+    && find /usr/local -type f -executable -exec ldd '{}' ';' \
+      | awk '/=>/ { print $(NF-1) }' \
+      | sort -u \
+      | xargs -r dpkg-query --search \
+      | cut -d: -f1 \
+      | sort -u \
+      | xargs -r apt-mark manual \
+    && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
+    && ln -s /usr/local/bin/node /usr/local/bin/nodejs \
+    # smoke tests
+    && node --version \
+    && fibjs --version \
+    && npm --version
+
+CMD [ "fibjs" ]
